@@ -29,54 +29,7 @@ bool comp(node* n1, node* n2) {
     return n1->weight < n2->weight;
 }
 
-int main() {
-
-    struct fclose_auto
-    {
-        void operator()(FILE* f) const noexcept { 
-            std::fclose(f); 
-        }
-    };
-
-    long total_read_bytes = 0;
-    long total_written_bytes = 0;
-
-    std::unique_ptr<FILE, fclose_auto> in_f(std::fopen("passport.jpg", "rb"));
-    std::unique_ptr<FILE, fclose_auto> out_f(std::fopen("test_zip.bin", "wb"));
-    std::unique_ptr<unsigned char[]> in_buffer(new unsigned char[SIZE]);
-
-    std::size_t read_bytes = std::fread(in_buffer.get(), 1, SIZE, in_f.get());
-
-    unsigned char counts_table[256]{};
-
-    for (auto ptr = in_buffer.get(); ptr != in_buffer.get() + read_bytes; ++ptr)
-        if (counts_table[*ptr] != 255)
-            ++counts_table[*ptr];
-
-    std::list<node*> list;
-    for (int i = 0; i < 256; ++i) {
-        if (counts_table[i])
-            list.push_back(new node(i, counts_table[i]));
-    }
-
-    while (list.size() != 1) {
-        list.sort(comp);
-        node* s1 = *list.begin();
-        list.pop_front();
-        node* s2 = *list.begin();
-        list.pop_front();
-
-        node* parent = new node(' ', s1->weight + s2->weight);
-        parent->son_l = s1;
-        parent->son_r = s2;
-        s1->parent = parent;
-        s2->parent = parent;
-        parent->symb = false;
-        list.push_back(parent);
-    }
-
-    node* root = list.front();
-
+std::map<unsigned char, std::string> list_to_tree(node* root) {
     std::string code;
     std::map<unsigned char, std::string> table;
 
@@ -102,6 +55,56 @@ int main() {
             code.pop_back();
         }
     }
+    return table;
+}
+
+node* table_to_list(std::vector<unsigned char>& counts_table) {
+    std::list<node*> list;
+    for (int i = 0; i < 256; ++i) {
+        if (counts_table[i])
+            list.push_back(new node(i, counts_table[i]));
+    }
+
+    while (list.size() != 1) {
+        list.sort(comp);
+        node* s1 = *list.begin();
+        list.pop_front();
+        node* s2 = *list.begin();
+        list.pop_front();
+
+        node* parent = new node(' ', s1->weight + s2->weight);
+        parent->son_l = s1;
+        parent->son_r = s2;
+        s1->parent = parent;
+        s2->parent = parent;
+        parent->symb = false;
+        list.push_back(parent);
+    }
+
+    return list.front();
+}
+
+node* pack_huffman(const char* input, const char* output) {
+    struct fclose_auto {
+        void operator()(FILE* f) const noexcept {
+            std::fclose(f);
+        }
+    };
+
+    std::unique_ptr<FILE, fclose_auto> in_f(std::fopen(input, "rb"));
+    std::unique_ptr<FILE, fclose_auto> out_f(std::fopen(output, "wb"));
+    std::unique_ptr<unsigned char[]> in_buffer(new unsigned char[SIZE]);
+
+    std::size_t read_bytes = std::fread(in_buffer.get(), 1, SIZE, in_f.get());
+
+    std::vector<unsigned char> counts_table(256);
+
+    for (auto ptr = in_buffer.get(); ptr != in_buffer.get() + read_bytes; ++ptr)
+        if (counts_table[*ptr] != 255)
+            ++counts_table[*ptr];
+
+    node* root = table_to_list(counts_table);
+    std::map<unsigned char, std::string> table = list_to_tree(root);
 
     unsigned char buf = '\0';
     int count = 0;
@@ -120,15 +123,23 @@ int main() {
         }
     }
     fwrite(&buf, sizeof(char), 1, out_f.get());
+    return root;
+}
 
-    out_f.~unique_ptr();
+void decode_huffman(const char* input, const char* output, node* root) {
+    struct fclose_auto {
+        void operator()(FILE* f) const noexcept {
+            std::fclose(f);
+        }
+    };
 
-    std::unique_ptr<FILE, fclose_auto> inzip_f(std::fopen("test_zip.bin", "rb"));
-    std::unique_ptr<FILE, fclose_auto> outzip_f(std::fopen("test_normal.jpg", "wb"));
+    std::unique_ptr<FILE, fclose_auto> inzip_f(std::fopen(input, "rb"));
+    std::unique_ptr<FILE, fclose_auto> outzip_f(std::fopen(output, "wb"));
     std::unique_ptr<unsigned char[]> inzip_buffer(new unsigned char[SIZE]);
     std::size_t readzip_bytes = std::fread(inzip_buffer.get(), 1, SIZE, inzip_f.get());
 
-    cur_root = root;
+    unsigned char buf;
+    node* cur_root = root;
     for (int i = 0; i < readzip_bytes; ++i) {
         buf = inzip_buffer[i];
         for (int count = 0; count < 8; ++count) {
@@ -143,8 +154,14 @@ int main() {
                 fwrite(&cur_root->ch, sizeof(char), 1, outzip_f.get());
                 cur_root = root;
             }
-        }      
+        }
     }
+}
+
+int main() {
+
+    node* key = pack_huffman("test.txt", "test_zip.txt");
+    decode_huffman("test_zip.txt", "test_normal.txt", key);
 
     return 0;
 }
