@@ -93,7 +93,7 @@ node* pack_huffman(const char* input, const char* output) {
 
     std::unique_ptr<FILE, fclose_auto> in_f(std::fopen(input, "rb"));
     std::unique_ptr<FILE, fclose_auto> out_f(std::fopen(output, "wb"));
-    std::unique_ptr<unsigned char[]> in_buffer(new unsigned char[SIZE]);
+    std::unique_ptr<unsigned char[]> in_buffer(new unsigned char[SIZE]);    
 
     std::size_t read_bytes = std::fread(in_buffer.get(), 1, SIZE, in_f.get());
 
@@ -116,13 +116,13 @@ node* pack_huffman(const char* input, const char* output) {
             buf = buf | (tmpi << (7 - count));
             count++;
             if (count == 8) {
-                fwrite(&buf, sizeof(char), 1, out_f.get());
+                std::fwrite(&buf, sizeof(char), 1, out_f.get());
                 count = 0;
                 buf = '\0';
             }
         }
     }
-    fwrite(&buf, sizeof(char), 1, out_f.get());
+    std::size_t written_bytes = std::fwrite(&buf, sizeof(char), 1, out_f.get());
     return root;
 }
 
@@ -151,7 +151,7 @@ void decode_huffman(const char* input, const char* output, node* root) {
                 cur_root = cur_root->son_l;
             }
             if (cur_root->son_l == nullptr && cur_root->son_r == nullptr) {
-                fwrite(&cur_root->ch, sizeof(char), 1, outzip_f.get());
+                std::fwrite(&cur_root->ch, sizeof(char), 1, outzip_f.get());
                 cur_root = root;
             }
         }
@@ -160,8 +160,8 @@ void decode_huffman(const char* input, const char* output, node* root) {
 
 int main() {
 
-    node* key = pack_huffman("test.txt", "test_zip.txt");
-    decode_huffman("test_zip.txt", "test_normal.txt", key);
+    node* key = pack_huffman("test2.txt", "test_zip.bin");
+    decode_huffman("test_zip.bin", "test_normal.txt", key);
 
     return 0;
 }
