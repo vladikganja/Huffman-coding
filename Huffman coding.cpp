@@ -29,9 +29,9 @@ bool comp(node* n1, node* n2) {
     return n1->weight < n2->weight;
 }
 
-std::map<unsigned char, std::string> list_to_tree(node* root) {
+std::vector<std::string> list_to_tree(node* root) {
     std::string code;
-    std::map<unsigned char, std::string> table;
+    std::vector<std::string> table(256);
 
     node* cur_root = root;
     while (true) {
@@ -84,13 +84,59 @@ node* table_to_list(std::vector<unsigned char>& counts_table) {
     return list.front();
 }
 
+// unite with list_to_tree
+unsigned char* hash_tree(node* root) {
+    unsigned char* hash = new unsigned char[1024]{'\0'};
+    int size = 0;
+    node* cur_root = root;
+    unsigned char buf = '\0';
+    int count = 0;
+    while (true) {
+        if (cur_root->son_l != nullptr && cur_root->son_l->used != true) {
+            buf = buf | (0 << (7 - count++));
+            cur_root->used = true;
+            cur_root = cur_root->son_l;
+        }
+        else if (cur_root->son_r != nullptr && cur_root->son_r->used != true) {
+            cur_root->used = true;
+            cur_root = cur_root->son_r;
+        }
+        else {
+            if (cur_root->symb == true) {
+                buf = buf | (1 << (7 - count++));
+                unsigned char letter = cur_root->ch;
+                for (int i = 0; i < 8; ++i) {
+                    int bit = 1 & letter >> (7 - i);
+                    buf = buf | (bit << (7 - count++));
+                    if (count == 8) {
+                        hash[size++] = buf;
+                        count = 0;
+                        buf = '\0';
+                    }
+                }
+            }
+            cur_root->used = true;
+            cur_root = cur_root->parent;
+            if (cur_root == nullptr)
+                break;
+        }
+        if (count == 8) {
+            hash[size++] = buf;
+            count = 0;
+            buf = '\0';
+        }
+    }
+    hash[size++] = buf;
+    return hash;
+}
+
 node* pack_huffman(const char* input, const char* output) {
     struct fclose_auto {
         void operator()(FILE* f) const noexcept {
             std::fclose(f);
         }
     };
-
+    std::size_t written_bytes = 0;
     std::unique_ptr<FILE, fclose_auto> in_f(std::fopen(input, "rb"));
     std::unique_ptr<FILE, fclose_auto> out_f(std::fopen(output, "wb"));
     std::unique_ptr<unsigned char[]> in_buffer(new unsigned char[SIZE]);    
@@ -104,25 +150,32 @@ node* pack_huffman(const char* input, const char* output) {
             ++counts_table[*ptr];
 
     node* root = table_to_list(counts_table);
-    std::map<unsigned char, std::string> table = list_to_tree(root);
+
+    // Дерево портится этим методом, надо объедиить с list_to_tree
+    /*unsigned char* hash = hash_tree(root);
+    for (int i = 0; hash[i] != '\0'; ++i)
+        written_bytes += std::fwrite(&hash[i], sizeof(char), 1, out_f.get());*/
+
+    std::vector<std::string> table = list_to_tree(root);
 
     unsigned char buf = '\0';
     int count = 0;
     for (int i = 0; i < SIZE; ++i) {
-        char c = in_buffer.get()[i];
+        unsigned char c = in_buffer.get()[i];
         std::string tmp = table[c];
         for (int j = 0; j < tmp.size(); ++j) {
             int tmpi = static_cast<int>(tmp[j] - 48);
             buf = buf | (tmpi << (7 - count));
             count++;
             if (count == 8) {
-                std::fwrite(&buf, sizeof(char), 1, out_f.get());
+                written_bytes += std::fwrite(&buf, sizeof(char), 1, out_f.get());
                 count = 0;
                 buf = '\0';
             }
         }
     }
-    std::size_t written_bytes = std::fwrite(&buf, sizeof(char), 1, out_f.get());
+    written_bytes += std::fwrite(&buf, sizeof(char), 1, out_f.get());
+    std::cout << "Bytes read: " << read_bytes << "\nBytes written: " << written_bytes << "\n";
     return root;
 }
 
