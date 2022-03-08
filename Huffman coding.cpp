@@ -29,35 +29,6 @@ bool comp(node* n1, node* n2) {
     return n1->weight < n2->weight;
 }
 
-std::vector<std::string> list_to_tree(node* root) {
-    std::string code;
-    std::vector<std::string> table(256);
-
-    node* cur_root = root;
-    while (true) {
-        if (cur_root->son_l != nullptr && cur_root->son_l->used != true) {
-            code.push_back('0');
-            cur_root->used = true;
-            cur_root = cur_root->son_l;
-        }
-        else if (cur_root->son_r != nullptr && cur_root->son_r->used != true) {
-            code.push_back('1');
-            cur_root->used = true;
-            cur_root = cur_root->son_r;
-        }
-        else {
-            if (cur_root->symb == true)
-                table[cur_root->ch] = code;
-            cur_root->used = true;
-            cur_root = cur_root->parent;
-            if (cur_root == nullptr)
-                break;
-            code.pop_back();
-        }
-    }
-    return table;
-}
-
 node* table_to_list(std::vector<unsigned char>& counts_table) {
     std::list<node*> list;
     for (int i = 0; i < 256; ++i) {
@@ -84,25 +55,28 @@ node* table_to_list(std::vector<unsigned char>& counts_table) {
     return list.front();
 }
 
-// unite with list_to_tree
-unsigned char* hash_tree(node* root) {
-    unsigned char* hash = new unsigned char[1024]{'\0'};
-    int size = 0;
-    node* cur_root = root;
-    unsigned char buf = '\0';
+std::vector<std::string> list_to_tree(node* root, unsigned char* hash, char& size) {
     int count = 0;
+    unsigned char buf = '\0';
+    std::string code;
+    std::vector<std::string> table(256);
+
+    node* cur_root = root;
     while (true) {
         if (cur_root->son_l != nullptr && cur_root->son_l->used != true) {
+            code.push_back('0');
             buf = buf | (0 << (7 - count++));
             cur_root->used = true;
             cur_root = cur_root->son_l;
         }
         else if (cur_root->son_r != nullptr && cur_root->son_r->used != true) {
+            code.push_back('1');
             cur_root->used = true;
             cur_root = cur_root->son_r;
         }
         else {
             if (cur_root->symb == true) {
+                table[cur_root->ch] = code;
                 buf = buf | (1 << (7 - count++));
                 unsigned char letter = cur_root->ch;
                 for (int i = 0; i < 8; ++i) {
@@ -119,6 +93,7 @@ unsigned char* hash_tree(node* root) {
             cur_root = cur_root->parent;
             if (cur_root == nullptr)
                 break;
+            code.pop_back();
         }
         if (count == 8) {
             hash[size++] = buf;
@@ -127,7 +102,7 @@ unsigned char* hash_tree(node* root) {
         }
     }
     hash[size++] = buf;
-    return hash;
+    return table;
 }
 
 node* pack_huffman(const char* input, const char* output) {
@@ -151,12 +126,15 @@ node* pack_huffman(const char* input, const char* output) {
 
     node* root = table_to_list(counts_table);
 
-    // Дерево портится этим методом, надо объедиить с list_to_tree
-    /*unsigned char* hash = hash_tree(root);
-    for (int i = 0; hash[i] != '\0'; ++i)
+    // Код первого символа - размер хешированного дерева
+    // Далее идёт само хешированное дерево
+    // Затем сам сжатый файл
+    char size = 0;
+    unsigned char* hash = new unsigned char[1024]{ '\0' };
+    std::vector<std::string> table = list_to_tree(root, hash, size);
+    //written_bytes += std::fwrite(&size, sizeof(char), 1, out_f.get());
+    /*for (int i = 0; i < size; ++i)
         written_bytes += std::fwrite(&hash[i], sizeof(char), 1, out_f.get());*/
-
-    std::vector<std::string> table = list_to_tree(root);
 
     unsigned char buf = '\0';
     int count = 0;
@@ -213,8 +191,8 @@ void decode_huffman(const char* input, const char* output, node* root) {
 
 int main() {
 
-    node* key = pack_huffman("test2.txt", "test_zip.bin");
-    decode_huffman("test_zip.bin", "test_normal.txt", key);
+    node* key = pack_huffman("photo1.jpg", "test_zip.bin");
+    decode_huffman("test_zip.bin", "test_normal.jpg", key);
 
     return 0;
 }
