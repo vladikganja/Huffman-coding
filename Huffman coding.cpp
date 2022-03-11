@@ -56,7 +56,7 @@ node* table_to_list(std::vector<unsigned char>& counts_table) {
     return list.front();
 }
 
-std::vector<std::string> list_to_tree(node* root, unsigned char* hash, int& size) {
+std::vector<std::string> list_to_tree(node* root, std::vector<unsigned char>& hash, int& size, bool DEBUG = false) {
     unsigned char count = 0;
     unsigned char buf = '\0';
     std::string code;
@@ -66,7 +66,9 @@ std::vector<std::string> list_to_tree(node* root, unsigned char* hash, int& size
     while (true) {
         if (cur_root->son_l != nullptr && cur_root->son_l->used != true) {
             code.push_back('0');
-            std::cout << 0;
+
+            if (DEBUG) std::cout << 0;
+
             buf = buf | (0 << (7 - count++));
             if (count == 8) {
                 hash[size++] = buf;
@@ -85,7 +87,9 @@ std::vector<std::string> list_to_tree(node* root, unsigned char* hash, int& size
             if (cur_root->symb == true) {
                 table[cur_root->ch] = code;
                 buf = buf | (1 << (7 - count++));
-                std::cout << 1;
+
+                if (DEBUG) std::cout << 1;
+
                 if (count == 8) {
                     hash[size++] = buf;
                     count = 0;
@@ -94,7 +98,9 @@ std::vector<std::string> list_to_tree(node* root, unsigned char* hash, int& size
                 unsigned char letter = cur_root->ch;
                 for (int i = 0; i < 8; ++i) {
                     int bit = 1 & letter >> (7 - i);
-                    std::cout << bit;
+
+                    if (DEBUG) std::cout << bit;
+
                     buf = buf | (bit << (7 - count++));
                     if (count == 8) {
                         hash[size++] = buf;
@@ -114,77 +120,92 @@ std::vector<std::string> list_to_tree(node* root, unsigned char* hash, int& size
     return table;
 }
 
-void pack_huffman(const char* input, const char* output) {
-    struct fclose_auto {
-        void operator()(FILE* f) const noexcept {
-            std::fclose(f);
-        }
-    };
-    std::size_t written_bytes = 0;
+struct fclose_auto {
+    void operator()(FILE* f) const noexcept {
+        std::fclose(f);
+    }
+};
+
+void encode_huffman(const char* input, const char* output) {
+    
+    std::size_t total_read_bytes = 0;
+    std::size_t total_written_bytes = 0;
     std::unique_ptr<FILE, fclose_auto> in_f(std::fopen(input, "rb"));
     std::unique_ptr<FILE, fclose_auto> out_f(std::fopen(output, "wb"));
-    std::unique_ptr<unsigned char[]> in_buffer(new unsigned char[BLOCK_SIZE]);
+    unsigned char* in_buffer = new unsigned char[BLOCK_SIZE];
 
-    std::size_t read_bytes = std::fread(in_buffer.get(), 1, BLOCK_SIZE, in_f.get());
+    while (true) {
+        std::size_t written_bytes = 0;
+        std::size_t read_bytes = std::fread(in_buffer, 1, BLOCK_SIZE, in_f.get());
+        if (read_bytes == 0)
+            break;
 
-    std::vector<unsigned char> counts_table(256);
+        std::vector<unsigned char> counts_table(256);
+        for (int i = 0; i < read_bytes; ++i)
+            if (counts_table[in_buffer[i]] != 255)
+                ++counts_table[in_buffer[i]];
 
-    for (auto ptr = in_buffer.get(); ptr != in_buffer.get() + read_bytes; ++ptr)
-        if (counts_table[*ptr] != 255)
-            ++counts_table[*ptr];
+        node* root = table_to_list(counts_table);
 
-    node* root = table_to_list(counts_table);
+        int size = 0;
+        std::vector<unsigned char> hash(512);
+        std::vector<std::string> table = list_to_tree(root, hash, size);
 
-    int size = 0;
-    unsigned char* hash = new unsigned char[1024]{ '\0' };
-    std::vector<std::string> table = list_to_tree(root, hash, size);
-    
-    std::vector<unsigned char> encoded_string(META_RESERVED, '\0');
-    encoded_string.reserve(BLOCK_SIZE);
+        std::vector<unsigned char> encoded_string(META_RESERVED, '\0');
+        encoded_string.reserve(BLOCK_SIZE);
 
-    for (int i = 0; i < size; ++i)
-        encoded_string.push_back(hash[i]);
+        for (int i = 0; i < size; ++i)
+            encoded_string.push_back(hash[i]);
 
-    unsigned char buf = '\0';
-    int count = 0;
-    for (int i = 0; i < BLOCK_SIZE; ++i) {
-        unsigned char c = in_buffer.get()[i];
-        std::string tmp = table[c];
-        for (int j = 0; j < tmp.size(); ++j) {
-            int tmpi = static_cast<int>(tmp[j] - 48);
-            buf = buf | (tmpi << (7 - count++));
-            if (count == 8) {
-                encoded_string.push_back(buf);
-                count = 0;
-                buf = '\0';
+        unsigned char buf = '\0';
+        int count = 0;
+        for (int i = 0; i < BLOCK_SIZE; ++i) {
+            unsigned char c = in_buffer[i];
+            std::string tmp = table[c];
+            for (int j = 0; j < tmp.size(); ++j) {
+                int tmpi = static_cast<int>(tmp[j] - 48);
+                buf = buf | (tmpi << (7 - count++));
+                if (count == 8) {
+                    encoded_string.push_back(buf);
+                    count = 0;
+                    buf = '\0';
+                }
             }
         }
-    }
-    encoded_string.push_back(buf);
+        encoded_string.push_back(buf);
 
-    // META FILLING ///////////////////////////////////
+        // META FILLING ///////////////////////////////////
 
-    encoded_string[0] = size / 256;
-    encoded_string[1] = size % 256;
-    encoded_string[2] = (encoded_string.size() - META_RESERVED - size) / 256;
-    encoded_string[3] = (encoded_string.size() - META_RESERVED - size) % 256;
-    encoded_string[4] = count;
+        encoded_string[0] = size / 256;
+        encoded_string[1] = size % 256;
+        encoded_string[2] = (encoded_string.size() - META_RESERVED - size) / 256;
+        encoded_string[3] = (encoded_string.size() - META_RESERVED - size) % 256;
+        encoded_string[4] = count;
 
-    ///////////////////////////////////////////////////
+        ///////////////////////////////////////////////////
 
-    for (int i = 0; i < encoded_string.size(); ++i)
-        written_bytes += std::fwrite(&encoded_string[i], sizeof(char), 1, out_f.get());
+        for (int i = 0; i < encoded_string.size(); ++i)
+            written_bytes += std::fwrite(&encoded_string[i], sizeof(char), 1, out_f.get());
+        total_read_bytes += read_bytes;
+        total_written_bytes += written_bytes;
+    }   
 
-    std::cout << "\nBytes read: " << read_bytes << "\nBytes written: " << written_bytes << "\n";
-    return;
+    std::cout << "\nBytes read: " << total_read_bytes << "\nBytes written: " << total_written_bytes << "\n";
 }
 
-void decode_huffman(const char* input, const char* output) {
-    struct fclose_auto {
-        void operator()(FILE* f) const noexcept {
-            std::fclose(f);
-        }
-    };
+void decode_huffman(const char* input, const char* output, bool DEBUG = false) {
+
+    //////////////////////////////////////////////////////////
+    //                                                      //
+    //  BLOCK STRUCTURE:                                    //
+    //  [0][1] - hash size (MAX SIZE: 320 bytes)            //
+    //  [2][3] - main size                                  //
+    //  [4]    - main tail                                  //
+    //  [5]~[hash size] - hash_tree                         //
+    //  [hash size + 5]~[main size + 5] - encoded data      //
+    //                                                      //
+    //////////////////////////////////////////////////////////
+
     struct d_node {
         d_node() {
             ch = '\0';
@@ -200,27 +221,16 @@ void decode_huffman(const char* input, const char* output) {
 
     std::unique_ptr<FILE, fclose_auto> inzip_f(std::fopen(input, "rb"));
     std::unique_ptr<FILE, fclose_auto> outzip_f(std::fopen(output, "wb"));
-    std::unique_ptr<unsigned char[]> inzip_meta(new unsigned char[META_RESERVED]);
-    std::unique_ptr<unsigned char[]> inzip_buffer(new unsigned char[BLOCK_SIZE]);
+    unsigned char* inzip_meta = new unsigned char[META_RESERVED];
+    unsigned char* inzip_buffer = new unsigned char[BLOCK_SIZE];
 
-    //////////////////////////////////////////////////////////
-    //                                                      //
-    //  BLOCK STRUCTURE:                                    //
-    //  [0][1] - hash size (MAX SIZE: 320 bytes)            //
-    //  [2][3] - main size                                  //
-    //  [4]    - main tail                                  //
-    //  [5]~[hash size] - hash_tree                         //
-    //  [hash size + 5]~[main size + 5] - encoded data      //
-    //                                                      //
-    //////////////////////////////////////////////////////////
+    std::fread(inzip_meta, 1, META_RESERVED, inzip_f.get());
 
-    std::fread(inzip_meta.get(), 1, META_RESERVED, inzip_f.get());
+    int hash_size = inzip_meta[0] * 256 + inzip_meta[1];
+    int main_size = inzip_meta[2] * 256 + inzip_meta[3];
+    unsigned char main_tail = inzip_meta[4];
 
-    int hash_size = inzip_meta.get()[0] * 256 + inzip_meta.get()[1];
-    int main_size = inzip_meta.get()[2] * 256 + inzip_meta.get()[3];
-    unsigned char main_tail = inzip_meta.get()[4];
-
-    std::size_t readzip_bytes = std::fread(inzip_buffer.get(), 1, main_size + hash_size + META_RESERVED, inzip_f.get());
+    std::size_t readzip_bytes = std::fread(inzip_buffer, 1, main_size + hash_size + META_RESERVED, inzip_f.get());
 
     int count = 0;
     d_node* root = new d_node;
@@ -237,13 +247,15 @@ void decode_huffman(const char* input, const char* output) {
         if (exit)
             break;
 
-        unsigned char byte = inzip_buffer.get()[i];
+        unsigned char byte = inzip_buffer[i];
         bool b = 1 & (byte >> (7 - count++));
         if (count == 8) {
             ++i;
             count = 0;
         }
-        std::cout << static_cast<int>(b);
+
+        if (DEBUG) std::cout << static_cast<int>(b);
+
         if (b == 0) {
             if (cur_root->son_l != nullptr) {
                 cur_root->son_r = new d_node;
@@ -262,10 +274,12 @@ void decode_huffman(const char* input, const char* output) {
             }
             cur_root->ch = '\0';
             for (int k = 0; k < 8; ++k) {
-                unsigned char tmp = inzip_buffer.get()[i];
+                unsigned char tmp = inzip_buffer[i];
                 int bit = 1 & tmp >> (7 - count++);
                 cur_root->ch = cur_root->ch | (bit << (7 - k));
-                std::cout << static_cast<int>(bit);
+
+                if (DEBUG) std::cout << static_cast<int>(bit);
+
                 if (count == 8) {
                     ++i;
                     count = 0;
@@ -302,7 +316,7 @@ void decode_huffman(const char* input, const char* output) {
 
 int main() {
 
-    pack_huffman("test.txt", "test_zip.bin");
+    encode_huffman("test4.txt", "test_zip.bin");
     decode_huffman("test_zip.bin", "test_normal.txt");
 
     return 0;
