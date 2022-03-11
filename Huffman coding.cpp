@@ -7,7 +7,7 @@
 #include <fstream>
 
 #define META_RESERVED 5
-#define BLOCK_SIZE 1024 * 4
+#define BLOCK_SIZE 1024 * 64
 
 struct node {
     node(unsigned char _ch, int _weight) : ch(_ch), weight(_weight) {
@@ -143,8 +143,8 @@ void encode_huffman(const char* input, const char* output) {
     
     std::cout << "\nEncoding started\n";
 
-    std::size_t total_read_bytes = 0;
-    std::size_t total_written_bytes = 0;
+    int total_read_bytes = 0;
+    int total_written_bytes = 0;
     std::unique_ptr<FILE, fclose_auto> in_f(std::fopen(input, "rb"));
     std::unique_ptr<FILE, fclose_auto> out_f(std::fopen(output, "wb"));
     unsigned char* in_buffer = new unsigned char[BLOCK_SIZE];
@@ -285,8 +285,8 @@ void decode_huffman(const char* input, const char* output, bool DEBUG = false) {
 
     std::cout << "\nDecoding started\n";
 
-    std::size_t total_read_bytes = 0;
-    std::size_t total_written_bytes = 0;
+    int total_read_bytes = 0;
+    int total_written_bytes = 0;
 
     std::unique_ptr<FILE, fclose_auto> inzip_f(std::fopen(input, "rb"));
     std::unique_ptr<FILE, fclose_auto> outzip_f(std::fopen(output, "wb"));
@@ -338,8 +338,8 @@ void decode_huffman(const char* input, const char* output, bool DEBUG = false) {
 
 int main() {
 
-    encode_huffman("photo1.jpg", "test_zip.bin");
-    decode_huffman("test_zip.bin", "test_normal.jpg");
+    encode_huffman("test.txt", "test_zip.bin");
+    decode_huffman("test_zip.bin", "test_normal.txt");
 
     return 0;
 }
