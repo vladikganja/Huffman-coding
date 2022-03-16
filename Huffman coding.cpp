@@ -7,7 +7,7 @@
 #include <fstream>
 
 #define META_RESERVED 5
-#define BLOCK_SIZE 1024 * 64
+#define BLOCK_SIZE 1024 * 32
 
 struct node {
     node(unsigned char _ch, int _weight) : ch(_ch), weight(_weight) {
@@ -270,7 +270,7 @@ d_node* restore_tree(unsigned char* inzip_buffer, int hash_size, bool DEBUG) {
     return root;
 }
 
-void decode_huffman(const char* input, const char* output, bool DEBUG = false) {
+void decode_huffman(const char* input, const char* output, bool DEBUG = false) noexcept {
 
     //////////////////////////////////////////////////////////
     //                                                      //
@@ -331,6 +331,7 @@ void decode_huffman(const char* input, const char* output, bool DEBUG = false) {
                 }
             }
         }
+        delete[] root;
     }      
 
     std::cout << std::fixed << "\nBytes read: " << total_read_bytes << "\nBytes written: " << total_written_bytes << "\n";
@@ -338,8 +339,8 @@ void decode_huffman(const char* input, const char* output, bool DEBUG = false) {
 
 int main() {
 
-    encode_huffman("test.txt", "test_zip.bin");
-    decode_huffman("test_zip.bin", "test_normal.txt");
+    encode_huffman("testword.docx", "test_zip.bin");
+    decode_huffman("test_zip.bin", "decword.docx");
 
     return 0;
 }
