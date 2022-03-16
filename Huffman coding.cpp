@@ -9,7 +9,74 @@
 #include <chrono>
 #include <iomanip>
 
-#define META_RESERVED 5
+constexpr auto META_RESERVED = 5;
+
+//template <typename Node_T>
+//class Allocator {
+//public:
+//    Node_T* begin_of_work_space;
+//    Node_T* end_of_work_space;
+//    Node_T** memory_stack;
+//    Node_T** memory_stack_end;
+//    Node_T* to_insert = nullptr;
+//    size_t exact_pos = 0;
+//
+//    Allocator(size_t count = 100000) {
+//        begin_of_work_space = new Node_T[count * sizeof(Node_T)];
+//        end_of_work_space = begin_of_work_space + count;
+//
+//        memory_stack = new Node_T * [count * sizeof(Node_T*)];
+//        memory_stack_end = memory_stack + count;
+//
+//        memory_stack[exact_pos] = begin_of_work_space;
+//    }
+//
+//    ~Allocator() {
+//        delete[] begin_of_work_space;
+//        delete[] memory_stack;
+//    }
+//
+//    Node_T* allocate(Node_T data) {
+//        to_insert = memory_stack[exact_pos];
+//        *to_insert = data;
+//        if (exact_pos == 0) {
+//            memory_stack[exact_pos]++;
+//        }
+//        else {
+//            exact_pos--;
+//        }
+//        cout << "allocate. to_insert: " << to_insert << "\texact_pos: " << exact_pos << "\tdata: " << data.data << "\n";
+//
+//        return to_insert;
+//    }
+//
+//    void deallocate(Node_T* ptr) {
+//        exact_pos++;
+//        memory_stack[exact_pos] = ptr;
+//        for (int i = 0; i <= exact_pos; i++)
+//        {
+//            cout << &memory_stack[i] << " = " << memory_stack[i] << "\t";
+//        }
+//        cout << "\n";
+//        cout << "deallocate. to_insert: " << memory_stack[exact_pos] << "\texact_pos: " << exact_pos << "\tdata: " << ptr->data << "\n";}
+//
+//    /*Node_T* allocate(size_t count) const {
+//        return ::operator new(count * sizeof(Node_T));
+//    }
+//
+//    void deallocate(Node_T* ptr, size_t * count) {
+//        ::operator delete(ptr);
+//    }
+//
+//    template <typename... Args>
+//    void cunstruct(Node_T* ptr, const Args&... args) {
+//        new(ptr) T(args...);
+//    }
+//
+//    void destroy(Node_T* ptr) {
+//        ptr->~Node_T();
+//    }*/
+//};
 
 struct node {
     node(unsigned char _ch, int _weight) : ch(_ch), weight(_weight) {
@@ -36,9 +103,9 @@ struct d_node {
         parent = nullptr;
     }
     unsigned char ch;
-    d_node* son_l;
-    d_node* son_r;
-    d_node* parent;
+    std::shared_ptr<d_node> son_l;
+    std::shared_ptr<d_node> son_r;
+    std::shared_ptr<d_node> parent;
 };
 
 bool comp(node* n1, node* n2) {
@@ -300,10 +367,14 @@ void archive(const char* input, const char* output, int User_block_size = 0) {
     std::cout << "\x1B[37mArchiving: \x1B[32m"  << diff.count() << " sec\x1B[37m\n";
 }
 
-d_node* restore_tree(unsigned char* inzip_buffer, int hash_size, bool DEBUG) {
+std::vector<std::shared_ptr<d_node>> restore_tree(unsigned char* inzip_buffer, int hash_size, bool DEBUG) {
     int count = 0;
-    d_node* root = new d_node;
-    d_node* cur_root = root;
+    int size = 0;
+    std::vector<std::shared_ptr<d_node>> root(512);
+    for (int i = 0; i < 512; ++i) {
+        root[i] = std::make_shared<d_node>(*(new d_node));
+    }
+    std::shared_ptr<d_node> cur_root = root[size++];
     for (int i = 0; i < hash_size;) {
         bool exit = false;
         while (cur_root->son_l != nullptr && cur_root->son_r != nullptr) {
@@ -327,17 +398,17 @@ d_node* restore_tree(unsigned char* inzip_buffer, int hash_size, bool DEBUG) {
 
         if (b == 0) {
             if (cur_root->son_l != nullptr) {
-                cur_root->son_r = new d_node;
+                cur_root->son_r = root[size++];
                 cur_root->son_r->parent = cur_root;
                 cur_root = cur_root->son_r;
             }
-            cur_root->son_l = new d_node;
+            cur_root->son_l = root[size++];
             cur_root->son_l->parent = cur_root;
             cur_root = cur_root->son_l;
         }
         else {
             if (cur_root->son_l != nullptr) {
-                cur_root->son_r = new d_node;
+                cur_root->son_r = root[size++];
                 cur_root->son_r->parent = cur_root;
                 cur_root = cur_root->son_r;
             }
@@ -403,11 +474,11 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
         unsigned char main_tail = inzip_meta[4];
 
         std::size_t readzip_bytes = std::fread(inzip_buffer, 1, main_size + hash_size, inzip_f.get());
-        total_read_bytes += readzip_meta + readzip_bytes;
+        total_read_bytes += static_cast<long long>(readzip_meta + readzip_bytes);
 
-        d_node* root = restore_tree(inzip_buffer, hash_size, DEBUG);
+        std::vector<std::shared_ptr<d_node>> root = restore_tree(inzip_buffer, hash_size, DEBUG);
 
-        d_node* cur_root = root;
+        std::shared_ptr<d_node> cur_root = root[0];
         unsigned char buf;
         int byte_size = 8;
         for (int i = hash_size; i < readzip_bytes; ++i) {
@@ -426,11 +497,10 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
                 }
                 if (cur_root->son_l == nullptr && cur_root->son_r == nullptr) {
                     total_written_bytes += std::fwrite(&cur_root->ch, sizeof(char), 1, outzip_f.get());
-                    cur_root = root;
+                    cur_root = root[0];
                 }
             }
         }
-        delete[] root;
     }      
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -442,8 +512,10 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
 
 int main() {
     
-    archive("photo1.jpg", "test_zip.bin");
-    unzip("test_zip.bin", "photo1_dec.jpg");
+    for (int i = 0; i < 1; ++i) {
+        archive("test.txt", "test_zip.bin");
+        unzip("test_zip.bin", "test4_dec.txt");
+    }
 
     return 0;
 }
