@@ -9,7 +9,7 @@
 #include <chrono>
 #include <iomanip>
 
-constexpr auto META_RESERVED = 5;
+constexpr auto META_RESERVED = 6;
 
 struct node {
     node(unsigned char _ch, int _weight) : ch(_ch), weight(_weight) {
@@ -192,9 +192,10 @@ void encode(const char* input, int BLOCK_SIZE, std::shared_ptr<std::vector<unsig
 
         encoded_string_tmp[0] = size / 256;
         encoded_string_tmp[1] = size % 256;
-        encoded_string_tmp[2] = (encoded_string_tmp.size() - META_RESERVED - size) / 256;
-        encoded_string_tmp[3] = (encoded_string_tmp.size() - META_RESERVED - size) % 256;
-        encoded_string_tmp[4] = count;
+        encoded_string_tmp[2] = (encoded_string_tmp.size() - META_RESERVED - size) / 65536;
+        encoded_string_tmp[3] = (encoded_string_tmp.size() - META_RESERVED - size) / 256;
+        encoded_string_tmp[4] = (encoded_string_tmp.size() - META_RESERVED - size) % 256;
+        encoded_string_tmp[5] = count;
 
         ///////////////////////////////////////////////////
 
@@ -371,10 +372,10 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
     //  [first byte of zip file] - block size (entire file) //
     //  BLOCK STRUCTURE:                                    //
     //  [0][1] - hash size (MAX SIZE: 320 bytes)            //
-    //  [2][3] - main size                                  //
-    //  [4]    - main tail                                  //
-    //  [5]~[hash size] - hash_tree                         //
-    //  [hash size + 5]~[main size + 5] - encoded data      //
+    //  [2][3][4] - main size                               //
+    //  [5]    - main tail                                  //
+    //  [6]~[hash size] - hash_tree                         //
+    //  [hash size + 6]~[main size + 6] - encoded data      //
     //                                                      //
     //////////////////////////////////////////////////////////
 
@@ -409,8 +410,8 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
             break;
 
         int hash_size = inzip_meta[0] * 256 + inzip_meta[1];
-        int main_size = inzip_meta[2] * 256 + inzip_meta[3];
-        unsigned char main_tail = inzip_meta[4];
+        int main_size = inzip_meta[2] * 65536 + inzip_meta[3] * 256 + inzip_meta[4];
+        unsigned char main_tail = inzip_meta[5];
 
         std::size_t readzip_bytes = std::fread(inzip_buffer, 1, main_size + hash_size, inzip_f.get());
         total_read_bytes += static_cast<long long>(readzip_meta + readzip_bytes);
@@ -455,8 +456,8 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
 int main() {
 
     for (int i = 0; i < 1; ++i) {
-        archive("testbig.jpg", "test_zip.bin");
-        unzip("test_zip.bin", "testbig_d.jpg");
+        archive("photo1.jpg", "test_zip.bin");
+        unzip("test_zip.bin", "photo1_d.jpg");
     }
 
     return 0;
