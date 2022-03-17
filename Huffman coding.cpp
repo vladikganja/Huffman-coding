@@ -10,6 +10,10 @@
 #include <iomanip>
 
 constexpr auto META_RESERVED = 6;
+#define RED "\x1B[31m"
+#define GRN "\x1B[32m"
+#define YEL "\x1B[33m"
+#define WHT "\x1B[37m"
 
 struct node {
     node(unsigned char _ch, int _weight) : ch(_ch), weight(_weight) {
@@ -208,14 +212,14 @@ void encode(const char* input, int BLOCK_SIZE, std::shared_ptr<std::vector<unsig
 void archive(const char* input, const char* output, int User_block_size = 0) {
     auto start = std::chrono::high_resolution_clock::now();
 
-    std::cout << "\nEncoding started\n";
+    std::cout << "====================Encoding started====================\n";
 
     long long total_read_bytes = 0;
-    long long total_written_bytes = 0;
-     
+    long long total_written_bytes = 0;     
 
     std::unique_ptr<FILE, fclose_auto> out_f(std::fopen(output, "wb"));
     std::chrono::duration<double> diff_interrupt(0);
+    std::string CMPSN = GRN;
     if (User_block_size != 0) {
         if (User_block_size > 256 || User_block_size < 0) {
             std::cout << "Incorrect block size. Chosen 256KB.\n";
@@ -253,7 +257,7 @@ void archive(const char* input, const char* output, int User_block_size = 0) {
         mod64.join();
 
         total_read_bytes /= strings.size();
-        std::cout << "\x1B[32m" << "Bytes read : " << total_read_bytes << '\n' << "\x1B[37m";
+        std::cout << GRN << "Bytes read : " << total_read_bytes << '\n' << WHT;
         std::cout << "Block sizes / Zip sizes\n";
         std::cout << "4Kb:  " << strings[0]->size() << "b\n";
         std::cout << "8Kb:  " << strings[1]->size() << "b\n";
@@ -276,7 +280,8 @@ void archive(const char* input, const char* output, int User_block_size = 0) {
                 total_written_bytes += std::fwrite(&strings[proper_index]->operator[](i), sizeof(char), 1, out_f.get());
         }
         else {
-            std::cout << "\x1B[31m" << "Impossible to zip this file. Do you want to zip it anyway ? (enter \"yes\"/\"no\")\n" << "\x1B[37m";
+            CMPSN = YEL;
+            std::cout << RED << "Impossible to zip this file. Do you want to zip it anyway ? (enter \"yes\"/\"no\")\n" << YEL;
             std::string ans;
             auto start_interrupt = std::chrono::high_resolution_clock::now();
             std::cin >> ans;
@@ -287,20 +292,22 @@ void archive(const char* input, const char* output, int User_block_size = 0) {
                     total_written_bytes += std::fwrite(&strings[proper_index]->operator[](i), sizeof(char), 1, out_f.get());
             }
             else {
-                std::cout << "\x1B[33m" << "File wasn't changed\n" << "\x1B[37m";
+                std::cout << YEL << "File wasn't changed\n" << WHT;
+                std::cout << "====================Encoding ended====================\n\n";
                 return;
             }
-        }        
+        }
     }
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> diff = end - start - diff_interrupt;
     std::cout.precision(4);
-    std::cout << "\x1B[32m" << "\nSuccessful archiving!\x1B[37m\n";
-    std::cout << std::fixed << "Bytes read: \x1B[32m" << total_read_bytes << "\x1B[37m\nBytes written: \x1B[32m" << total_written_bytes <<
-        "\x1B[37m\nFile compression: \x1B[32m" << static_cast<double>(total_read_bytes - total_written_bytes) * 100.0 / total_read_bytes << "%\n";
+    std::cout << GRN << "\nSuccessful archiving!\n";
+    std::cout << std::fixed << WHT << "Bytes read: " << GRN << total_read_bytes << WHT << "\nBytes written: " << GRN << total_written_bytes <<
+        WHT << "\nFile compression: " << CMPSN << static_cast<double>(total_read_bytes - total_written_bytes) * 100.0 / total_read_bytes << "%\n";
 
-    std::cout << "\x1B[37mArchiving: \x1B[32m"  << diff.count() << " sec\x1B[37m\n";
+    std::cout << WHT << "Archiving: " << GRN << diff.count() << " sec\n" << WHT;
+    std::cout << "====================Encoding ended====================\n\n";
 }
 
 std::vector<d_node> restore_tree(unsigned char* inzip_buffer, int hash_size, bool DEBUG) {
@@ -381,7 +388,7 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
 
     auto start = std::chrono::high_resolution_clock::now();
 
-    std::cout << "\nDecoding started\n";
+    std::cout << "====================Decoding started==================\n";
 
     std::unique_ptr<FILE, fclose_auto> inzip_f(std::fopen(input, "rb"));
     std::unique_ptr<FILE, fclose_auto> outzip_f(std::fopen(output, "wb"));
@@ -446,8 +453,10 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> diff = end - start;
     std::cout.precision(4);
-    std::cout << std::fixed << "\nBytes read: " << total_read_bytes << "\nBytes written: " << total_written_bytes << "\n";
-    std::cout << "Unzip: " << diff.count() << " sec\n";
+    std::cout << GRN << "Successful unzip!\n";
+    std::cout << std::fixed << WHT << "Bytes read: " << GRN << total_read_bytes << WHT << "\nBytes written: " << GRN << total_written_bytes;
+    std::cout << WHT << "\nUnzip: " << GRN << diff.count() << " sec\n" << WHT;
+    std::cout << "====================Decoding ended====================\n\n";
 
     delete[] inzip_meta;
     delete[] inzip_buffer;
@@ -456,8 +465,8 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
 int main() {
 
     for (int i = 0; i < 1; ++i) {
-        archive("photo1.jpg", "test_zip.bin");
-        unzip("test_zip.bin", "photo1_d.jpg");
+        archive("tests/originals/testbig.jpg", "test_zip.bin");
+        unzip("test_zip.bin", "tests/decoded/testbig_d.jpg");
     }
 
     return 0;
