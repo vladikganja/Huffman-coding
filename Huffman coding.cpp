@@ -11,73 +11,6 @@
 
 constexpr auto META_RESERVED = 5;
 
-//template <typename Node_T>
-//class Allocator {
-//public:
-//    Node_T* begin_of_work_space;
-//    Node_T* end_of_work_space;
-//    Node_T** memory_stack;
-//    Node_T** memory_stack_end;
-//    Node_T* to_insert = nullptr;
-//    size_t exact_pos = 0;
-//
-//    Allocator(size_t count = 100000) {
-//        begin_of_work_space = new Node_T[count * sizeof(Node_T)];
-//        end_of_work_space = begin_of_work_space + count;
-//
-//        memory_stack = new Node_T * [count * sizeof(Node_T*)];
-//        memory_stack_end = memory_stack + count;
-//
-//        memory_stack[exact_pos] = begin_of_work_space;
-//    }
-//
-//    ~Allocator() {
-//        delete[] begin_of_work_space;
-//        delete[] memory_stack;
-//    }
-//
-//    Node_T* allocate(Node_T data) {
-//        to_insert = memory_stack[exact_pos];
-//        *to_insert = data;
-//        if (exact_pos == 0) {
-//            memory_stack[exact_pos]++;
-//        }
-//        else {
-//            exact_pos--;
-//        }
-//        cout << "allocate. to_insert: " << to_insert << "\texact_pos: " << exact_pos << "\tdata: " << data.data << "\n";
-//
-//        return to_insert;
-//    }
-//
-//    void deallocate(Node_T* ptr) {
-//        exact_pos++;
-//        memory_stack[exact_pos] = ptr;
-//        for (int i = 0; i <= exact_pos; i++)
-//        {
-//            cout << &memory_stack[i] << " = " << memory_stack[i] << "\t";
-//        }
-//        cout << "\n";
-//        cout << "deallocate. to_insert: " << memory_stack[exact_pos] << "\texact_pos: " << exact_pos << "\tdata: " << ptr->data << "\n";}
-//
-//    /*Node_T* allocate(size_t count) const {
-//        return ::operator new(count * sizeof(Node_T));
-//    }
-//
-//    void deallocate(Node_T* ptr, size_t * count) {
-//        ::operator delete(ptr);
-//    }
-//
-//    template <typename... Args>
-//    void cunstruct(Node_T* ptr, const Args&... args) {
-//        new(ptr) T(args...);
-//    }
-//
-//    void destroy(Node_T* ptr) {
-//        ptr->~Node_T();
-//    }*/
-//};
-
 struct node {
     node(unsigned char _ch, int _weight) : ch(_ch), weight(_weight) {
         son_l = nullptr;
@@ -103,9 +36,9 @@ struct d_node {
         parent = nullptr;
     }
     unsigned char ch;
-    std::shared_ptr<d_node> son_l;
-    std::shared_ptr<d_node> son_r;
-    std::shared_ptr<d_node> parent;
+    d_node* son_l;
+    d_node* son_r;
+    d_node* parent;
 };
 
 bool comp(node* n1, node* n2) {
@@ -268,6 +201,7 @@ void encode(const char* input, int BLOCK_SIZE, std::shared_ptr<std::vector<unsig
         for (int i = 0; i < encoded_string_tmp.size(); ++i)
             encoded_string->push_back(encoded_string_tmp[i]);
     }    
+    delete[] in_buffer;
 }
 
 void archive(const char* input, const char* output, int User_block_size = 0) {
@@ -277,7 +211,8 @@ void archive(const char* input, const char* output, int User_block_size = 0) {
 
     long long total_read_bytes = 0;
     long long total_written_bytes = 0;
-    
+     
+
     std::unique_ptr<FILE, fclose_auto> out_f(std::fopen(output, "wb"));
     std::chrono::duration<double> diff_interrupt(0);
     if (User_block_size != 0) {
@@ -367,14 +302,12 @@ void archive(const char* input, const char* output, int User_block_size = 0) {
     std::cout << "\x1B[37mArchiving: \x1B[32m"  << diff.count() << " sec\x1B[37m\n";
 }
 
-std::vector<std::shared_ptr<d_node>> restore_tree(unsigned char* inzip_buffer, int hash_size, bool DEBUG) {
+std::vector<d_node> restore_tree(unsigned char* inzip_buffer, int hash_size, bool DEBUG) {
     int count = 0;
     int size = 0;
-    std::vector<std::shared_ptr<d_node>> root(512);
-    for (int i = 0; i < 512; ++i) {
-        root[i] = std::make_shared<d_node>(*(new d_node));
-    }
-    std::shared_ptr<d_node> cur_root = root[size++];
+    
+    std::vector<d_node> root(512);
+    d_node* cur_root = &root[size++];
     for (int i = 0; i < hash_size;) {
         bool exit = false;
         while (cur_root->son_l != nullptr && cur_root->son_r != nullptr) {
@@ -398,17 +331,17 @@ std::vector<std::shared_ptr<d_node>> restore_tree(unsigned char* inzip_buffer, i
 
         if (b == 0) {
             if (cur_root->son_l != nullptr) {
-                cur_root->son_r = root[size++];
+                cur_root->son_r = &root[size++];
                 cur_root->son_r->parent = cur_root;
                 cur_root = cur_root->son_r;
             }
-            cur_root->son_l = root[size++];
+            cur_root->son_l = &root[size++];
             cur_root->son_l->parent = cur_root;
             cur_root = cur_root->son_l;
         }
         else {
             if (cur_root->son_l != nullptr) {
-                cur_root->son_r = root[size++];
+                cur_root->son_r = &root[size++];
                 cur_root->son_r->parent = cur_root;
                 cur_root = cur_root->son_r;
             }
@@ -416,7 +349,7 @@ std::vector<std::shared_ptr<d_node>> restore_tree(unsigned char* inzip_buffer, i
             for (int k = 0; k < 8; ++k) {
                 unsigned char tmp = inzip_buffer[i];
                 int bit = 1 & tmp >> (7 - count++);
-                cur_root->ch = cur_root->ch | (bit << (7 - k));
+                cur_root->ch = (cur_root->ch | (bit << (7 - k)));
 
                 if (DEBUG) std::cout << static_cast<int>(bit);
 
@@ -456,14 +389,20 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
     long long total_written_bytes = 0;
 
     int base = 1024;
-    unsigned char mod;
+    unsigned char mod = 0;
+    int BLOCK_SIZE = 0;
     total_read_bytes += std::fread(&mod, 1, 1, inzip_f.get());
-    if (mod == 0) mod = 256;
-    int BLOCK_SIZE = base * mod;
+    if (mod == 0) {
+        BLOCK_SIZE = base * 256;
+    }
+    else {
+        BLOCK_SIZE = base * mod;
+    }
+     
     unsigned char* inzip_meta = new unsigned char[META_RESERVED];
-    unsigned char* inzip_buffer = new unsigned char[BLOCK_SIZE];
+    unsigned char* inzip_buffer = new unsigned char[BLOCK_SIZE * 4];
 
-    while (true) {
+    while (true) {        
 
         std::size_t readzip_meta = std::fread(inzip_meta, 1, META_RESERVED, inzip_f.get());
         if (readzip_meta == 0)
@@ -476,9 +415,9 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
         std::size_t readzip_bytes = std::fread(inzip_buffer, 1, main_size + hash_size, inzip_f.get());
         total_read_bytes += static_cast<long long>(readzip_meta + readzip_bytes);
 
-        std::vector<std::shared_ptr<d_node>> root = restore_tree(inzip_buffer, hash_size, DEBUG);
+        std::vector<d_node> root = restore_tree(inzip_buffer, hash_size, DEBUG);
 
-        std::shared_ptr<d_node> cur_root = root[0];
+        d_node* cur_root = &root[0];
         unsigned char buf;
         int byte_size = 8;
         for (int i = hash_size; i < readzip_bytes; ++i) {
@@ -497,7 +436,7 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
                 }
                 if (cur_root->son_l == nullptr && cur_root->son_r == nullptr) {
                     total_written_bytes += std::fwrite(&cur_root->ch, sizeof(char), 1, outzip_f.get());
-                    cur_root = root[0];
+                    cur_root = &root[0];
                 }
             }
         }
@@ -508,13 +447,16 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
     std::cout.precision(4);
     std::cout << std::fixed << "\nBytes read: " << total_read_bytes << "\nBytes written: " << total_written_bytes << "\n";
     std::cout << "Unzip: " << diff.count() << " sec\n";
+
+    delete[] inzip_meta;
+    delete[] inzip_buffer;
 }
 
 int main() {
-    
+
     for (int i = 0; i < 1; ++i) {
-        archive("test.txt", "test_zip.bin");
-        unzip("test_zip.bin", "test4_dec.txt");
+        archive("testbig.jpg", "test_zip.bin");
+        unzip("test_zip.bin", "testbig_d.jpg");
     }
 
     return 0;
