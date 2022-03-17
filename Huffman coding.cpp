@@ -10,6 +10,16 @@
 #include <iomanip>
 
 constexpr auto META_RESERVED = 6;
+constexpr auto RED = "\x1B[31m";
+constexpr auto GRN = "\x1B[32m";
+constexpr auto YEL = "\x1B[33m";
+constexpr auto WHT = "\x1B[37m";
+
+struct fclose_auto {
+    void operator()(FILE* f) const noexcept {
+        std::fclose(f);
+    }
+};
 
 struct node {
     node(unsigned char _ch, int _weight) : ch(_ch), weight(_weight) {
@@ -45,6 +55,8 @@ bool comp(node* n1, node* n2) {
     return n1->weight < n2->weight;
 }
 
+///////////////////////////////////////////////////////////////////////////////ARCHIVING/////////////////////////////////////////////////////////////
+
 node* table_to_list(std::vector<unsigned char>& counts_table) {
     std::list<node*> list;
     for (int i = 0; i < 256; ++i) {
@@ -71,7 +83,7 @@ node* table_to_list(std::vector<unsigned char>& counts_table) {
     return list.front();
 }
 
-std::vector<std::string> list_to_tree(node* root, std::vector<unsigned char>& hash, int& size, bool DEBUG = false) {
+std::vector<std::string> list_to_tree(node* root, std::vector<unsigned char>& hash, int& size) {
     unsigned char count = 0;
     unsigned char buf = '\0';
     std::string code;
@@ -82,7 +94,7 @@ std::vector<std::string> list_to_tree(node* root, std::vector<unsigned char>& ha
         if (cur_root->son_l != nullptr && cur_root->son_l->used != true) {
             code.push_back('0');
 
-            if (DEBUG) std::cout << 0;
+            //std::cout << 0;
 
             buf = buf | (0 << (7 - count++));
             if (count == 8) {
@@ -103,7 +115,7 @@ std::vector<std::string> list_to_tree(node* root, std::vector<unsigned char>& ha
                 table[cur_root->ch] = code;
                 buf = buf | (1 << (7 - count++));
 
-                if (DEBUG) std::cout << 1;
+                //std::cout << 1;
 
                 if (count == 8) {
                     hash[size++] = buf;
@@ -114,7 +126,7 @@ std::vector<std::string> list_to_tree(node* root, std::vector<unsigned char>& ha
                 for (int i = 0; i < 8; ++i) {
                     int bit = 1 & letter >> (7 - i);
 
-                    if (DEBUG) std::cout << bit;
+                    //std::cout << bit;
 
                     buf = buf | (bit << (7 - count++));
                     if (count == 8) {
@@ -135,18 +147,12 @@ std::vector<std::string> list_to_tree(node* root, std::vector<unsigned char>& ha
     return table;
 }
 
-struct fclose_auto {
-    void operator()(FILE* f) const noexcept {
-        std::fclose(f);
-    }
-};
-
 void encode(const char* input, int BLOCK_SIZE, std::shared_ptr<std::vector<unsigned char>> encoded_string, long long& total_read_bytes) {
 
     std::unique_ptr<FILE, fclose_auto> in_f(std::fopen(input, "rb"));
     encoded_string->reserve(BLOCK_SIZE);
 
-    unsigned char* in_buffer = new unsigned char[BLOCK_SIZE];
+    unsigned char* in_buffer = new unsigned char[BLOCK_SIZE * 4];
 
     while (true) {
         int read_bytes = std::fread(in_buffer, 1, BLOCK_SIZE, in_f.get());
@@ -208,42 +214,46 @@ void encode(const char* input, int BLOCK_SIZE, std::shared_ptr<std::vector<unsig
 void archive(const char* input, const char* output, int User_block_size = 0) {
     auto start = std::chrono::high_resolution_clock::now();
 
-    std::cout << "\nEncoding started\n";
+    std::cout << "====================Encoding started====================\n";
 
     long long total_read_bytes = 0;
-    long long total_written_bytes = 0;
-     
+    long long total_written_bytes = 0;     
 
     std::unique_ptr<FILE, fclose_auto> out_f(std::fopen(output, "wb"));
     std::chrono::duration<double> diff_interrupt(0);
+    std::string CMPSN = GRN;
+
+    std::vector<std::shared_ptr<std::vector<unsigned char>>> strings(7);
+    strings[0] = std::make_shared<std::vector<unsigned char>>(*(new std::vector<unsigned char>(1, 0))); // user size
+    strings[1] = std::make_shared<std::vector<unsigned char>>(*(new std::vector<unsigned char>(1, 4)));
+    strings[2] = std::make_shared<std::vector<unsigned char>>(*(new std::vector<unsigned char>(1, 8)));
+    strings[3] = std::make_shared<std::vector<unsigned char>>(*(new std::vector<unsigned char>(1, 16)));
+    strings[4] = std::make_shared<std::vector<unsigned char>>(*(new std::vector<unsigned char>(1, 32)));
+    strings[5] = std::make_shared<std::vector<unsigned char>>(*(new std::vector<unsigned char>(1, 48)));
+    strings[6] = std::make_shared<std::vector<unsigned char>>(*(new std::vector<unsigned char>(1, 64)));
+
+    long long cur_min = 1e18;
+    int proper_index = 0;
+
     if (User_block_size != 0) {
         if (User_block_size > 256 || User_block_size < 0) {
             std::cout << "Incorrect block size. Chosen 256KB.\n";
             User_block_size = 256;
         }
-        std::shared_ptr<std::vector<unsigned char>> encoded_stringN(new std::vector < unsigned char>(1, User_block_size % 256));
-        encode(input, 1024 * User_block_size, encoded_stringN, std::ref(total_read_bytes));
-        std::cout << "Bytes read: " << total_read_bytes << '\n';
+        strings[0]->operator[](0) = User_block_size % 256;
+        encode(input, 1024 * User_block_size, strings[0], std::ref(total_read_bytes));
+        cur_min = strings[0]->size();
+        std::cout << GRN << "Bytes read: " << total_read_bytes << '\n' << WHT;
         std::cout << "Block size / Zip size\n";
-        std::cout << User_block_size << "KB:  " << encoded_stringN->size() << '\n';
-        for (int i = 0; i < encoded_stringN->size(); ++i)
-            total_written_bytes += std::fwrite(&encoded_stringN->operator[](i), sizeof(char), 1, out_f.get());
+        std::cout << User_block_size << "KB: " << strings[0]->size() << '\n';
     }
     else {
-        std::vector<std::shared_ptr<std::vector<unsigned char>>> strings(6);
-        strings[0] = std::make_shared<std::vector<unsigned char>>(*(new std::vector < unsigned char>(1, 4)));
-        strings[1] = std::make_shared<std::vector<unsigned char>>(*(new std::vector < unsigned char>(1, 8)));
-        strings[2] = std::make_shared<std::vector<unsigned char>>(*(new std::vector < unsigned char>(1, 16)));
-        strings[3] = std::make_shared<std::vector<unsigned char>>(*(new std::vector < unsigned char>(1, 32)));
-        strings[4] = std::make_shared<std::vector<unsigned char>>(*(new std::vector < unsigned char>(1, 48)));
-        strings[5] = std::make_shared<std::vector<unsigned char>>(*(new std::vector < unsigned char>(1, 64)));
-
-        std::thread mod4 (encode, input, 1024 * 4,  strings[0], std::ref(total_read_bytes));
-        std::thread mod8 (encode, input, 1024 * 8,  strings[1], std::ref(total_read_bytes));
-        std::thread mod16(encode, input, 1024 * 16, strings[2], std::ref(total_read_bytes));
-        std::thread mod32(encode, input, 1024 * 32, strings[3], std::ref(total_read_bytes));
-        std::thread mod48(encode, input, 1024 * 48, strings[4], std::ref(total_read_bytes));
-        std::thread mod64(encode, input, 1024 * 64, strings[5], std::ref(total_read_bytes));
+        std::thread mod4 (encode, input, 1024 * 4,  strings[1], std::ref(total_read_bytes));
+        std::thread mod8 (encode, input, 1024 * 8,  strings[2], std::ref(total_read_bytes));
+        std::thread mod16(encode, input, 1024 * 16, strings[3], std::ref(total_read_bytes));
+        std::thread mod32(encode, input, 1024 * 32, strings[4], std::ref(total_read_bytes));
+        std::thread mod48(encode, input, 1024 * 48, strings[5], std::ref(total_read_bytes));
+        std::thread mod64(encode, input, 1024 * 64, strings[6], std::ref(total_read_bytes));
 
         mod4.join();
         mod8.join();
@@ -252,58 +262,62 @@ void archive(const char* input, const char* output, int User_block_size = 0) {
         mod48.join();
         mod64.join();
 
-        total_read_bytes /= strings.size();
-        std::cout << "\x1B[32m" << "Bytes read : " << total_read_bytes << '\n' << "\x1B[37m";
+        total_read_bytes /= static_cast<long long>(strings.size()) - 1;
+        std::cout << GRN << "Bytes read: " << total_read_bytes << '\n' << WHT;
         std::cout << "Block sizes / Zip sizes\n";
-        std::cout << "4Kb:  " << strings[0]->size() << "b\n";
-        std::cout << "8Kb:  " << strings[1]->size() << "b\n";
-        std::cout << "16Kb: " << strings[2]->size() << "b\n";
-        std::cout << "32Kb: " << strings[3]->size() << "b\n";
-        std::cout << "48Kb: " << strings[4]->size() << "b\n";
-        std::cout << "64Kb: " << strings[5]->size() << "b\n";
+        std::cout << "4Kb:  " << strings[1]->size() << "b\n";
+        std::cout << "8Kb:  " << strings[2]->size() << "b\n";
+        std::cout << "16Kb: " << strings[3]->size() << "b\n";
+        std::cout << "32Kb: " << strings[4]->size() << "b\n";
+        std::cout << "48Kb: " << strings[5]->size() << "b\n";
+        std::cout << "64Kb: " << strings[6]->size() << "b\n";
 
-        long long cur_min= 1e18;
-        int proper_index = 0;
-        for (int i = 0; i < strings.size(); ++i) {
+        for (int i = 1; i < strings.size(); ++i) {
             if (strings[i]->size() < cur_min) {
                 cur_min = strings[i]->size();
                 proper_index = i;
             }
         }
-        if (cur_min < total_read_bytes) {
-            std::cout << "Block size chosen: " << static_cast<int>(strings[proper_index]->operator[](0)) << "Kb\n";
+    }
+
+    if (cur_min < total_read_bytes) {
+        std::cout << "Block size chosen: " << static_cast<int>(strings[proper_index]->operator[](0)) << "Kb\n";
+        for (int i = 0; i < strings[proper_index]->size(); ++i)
+            total_written_bytes += std::fwrite(&strings[proper_index]->operator[](i), sizeof(char), 1, out_f.get());
+    }
+    else {
+        CMPSN = YEL;
+        std::cout << RED << "Impossible to zip this file. Do you want to zip it anyway ? (enter \"yes\"/\"no\")\n" << YEL;
+        std::string ans;
+        auto start_interrupt = std::chrono::high_resolution_clock::now();
+        std::cin >> ans;
+        auto end_interrupt = std::chrono::high_resolution_clock::now();
+        diff_interrupt = end_interrupt - start_interrupt;
+        if (ans == "yes") {
             for (int i = 0; i < strings[proper_index]->size(); ++i)
                 total_written_bytes += std::fwrite(&strings[proper_index]->operator[](i), sizeof(char), 1, out_f.get());
         }
         else {
-            std::cout << "\x1B[31m" << "Impossible to zip this file. Do you want to zip it anyway ? (enter \"yes\"/\"no\")\n" << "\x1B[37m";
-            std::string ans;
-            auto start_interrupt = std::chrono::high_resolution_clock::now();
-            std::cin >> ans;
-            auto end_interrupt = std::chrono::high_resolution_clock::now();
-            diff_interrupt = end_interrupt - start_interrupt;
-            if (ans == "yes") {
-                for (int i = 0; i < strings[proper_index]->size(); ++i)
-                    total_written_bytes += std::fwrite(&strings[proper_index]->operator[](i), sizeof(char), 1, out_f.get());
-            }
-            else {
-                std::cout << "\x1B[33m" << "File wasn't changed\n" << "\x1B[37m";
-                return;
-            }
-        }        
+            std::cout << YEL << "File wasn't changed\n" << WHT;
+            std::cout << "====================Encoding ended====================\n\n";
+            return;
+        }
     }
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> diff = end - start - diff_interrupt;
     std::cout.precision(4);
-    std::cout << "\x1B[32m" << "\nSuccessful archiving!\x1B[37m\n";
-    std::cout << std::fixed << "Bytes read: \x1B[32m" << total_read_bytes << "\x1B[37m\nBytes written: \x1B[32m" << total_written_bytes <<
-        "\x1B[37m\nFile compression: \x1B[32m" << static_cast<double>(total_read_bytes - total_written_bytes) * 100.0 / total_read_bytes << "%\n";
+    std::cout << GRN << "\nSuccessful archiving!\n";
+    std::cout << std::fixed << WHT << "Bytes read: " << GRN << total_read_bytes << WHT << "\nBytes written: " << GRN << total_written_bytes <<
+        WHT << "\nFile compression: " << CMPSN << static_cast<double>(total_read_bytes - total_written_bytes) * 100.0 / total_read_bytes << "%\n";
 
-    std::cout << "\x1B[37mArchiving: \x1B[32m"  << diff.count() << " sec\x1B[37m\n";
+    std::cout << WHT << "Archiving: " << GRN << diff.count() << " sec\n" << WHT;
+    std::cout << "====================Encoding ended====================\n\n";
 }
 
-std::vector<d_node> restore_tree(unsigned char* inzip_buffer, int hash_size, bool DEBUG) {
+///////////////////////////////////////////////////////////////////////////////UNZIP/////////////////////////////////////////////////////////////////
+
+std::vector<d_node> restore_tree(unsigned char* inzip_buffer, int hash_size) {
     int count = 0;
     int size = 0;
     
@@ -311,6 +325,10 @@ std::vector<d_node> restore_tree(unsigned char* inzip_buffer, int hash_size, boo
     d_node* cur_root = &root[size++];
     for (int i = 0; i < hash_size;) {
         bool exit = false;
+        if (cur_root == nullptr) {
+            std::cerr << RED << "Decoding failed! Maybe this file was archived incorrectly...\n" << WHT;
+            return {};
+        }
         while (cur_root->son_l != nullptr && cur_root->son_r != nullptr) {
             cur_root = cur_root->parent;
             if (cur_root == nullptr) {
@@ -328,7 +346,7 @@ std::vector<d_node> restore_tree(unsigned char* inzip_buffer, int hash_size, boo
             count = 0;
         }
 
-        if (DEBUG) std::cout << static_cast<int>(b);
+        //std::cout << static_cast<int>(b);
 
         if (b == 0) {
             if (cur_root->son_l != nullptr) {
@@ -352,7 +370,7 @@ std::vector<d_node> restore_tree(unsigned char* inzip_buffer, int hash_size, boo
                 int bit = 1 & tmp >> (7 - count++);
                 cur_root->ch = (cur_root->ch | (bit << (7 - k)));
 
-                if (DEBUG) std::cout << static_cast<int>(bit);
+                //std::cout << static_cast<int>(bit);
 
                 if (count == 8) {
                     ++i;
@@ -365,7 +383,7 @@ std::vector<d_node> restore_tree(unsigned char* inzip_buffer, int hash_size, boo
     return root;
 }
 
-void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
+void unzip(const char* input, const char* output) {
 
     //////////////////////////////////////////////////////////
     //                                                      //
@@ -381,7 +399,7 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
 
     auto start = std::chrono::high_resolution_clock::now();
 
-    std::cout << "\nDecoding started\n";
+    std::cout << "====================Decoding started==================\n";
 
     std::unique_ptr<FILE, fclose_auto> inzip_f(std::fopen(input, "rb"));
     std::unique_ptr<FILE, fclose_auto> outzip_f(std::fopen(output, "wb"));
@@ -416,7 +434,9 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
         std::size_t readzip_bytes = std::fread(inzip_buffer, 1, main_size + hash_size, inzip_f.get());
         total_read_bytes += static_cast<long long>(readzip_meta + readzip_bytes);
 
-        std::vector<d_node> root = restore_tree(inzip_buffer, hash_size, DEBUG);
+        std::vector<d_node> root = restore_tree(inzip_buffer, hash_size);
+        if (root.size() == 0)
+            return;
 
         d_node* cur_root = &root[0];
         unsigned char buf;
@@ -443,21 +463,25 @@ void unzip(const char* input, const char* output, bool DEBUG = false) noexcept {
         }
     }      
 
+    delete[] inzip_meta;
+    delete[] inzip_buffer;
+
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> diff = end - start;
     std::cout.precision(4);
-    std::cout << std::fixed << "\nBytes read: " << total_read_bytes << "\nBytes written: " << total_written_bytes << "\n";
-    std::cout << "Unzip: " << diff.count() << " sec\n";
-
-    delete[] inzip_meta;
-    delete[] inzip_buffer;
+    std::cout << GRN << "Successful unzip!\n";
+    std::cout << std::fixed << WHT << "Bytes read: " << GRN << total_read_bytes << WHT << "\nBytes written: " << GRN << total_written_bytes;
+    std::cout << WHT << "\nUnzip: " << GRN << diff.count() << " sec\n" << WHT;
+    std::cout << "====================Decoding ended====================\n\n";
 }
+
+///////////////////////////////////////////////////////////////////////////////MAIN//////////////////////////////////////////////////////////////////
 
 int main() {
 
     for (int i = 0; i < 1; ++i) {
-        archive("photo1.jpg", "test_zip.bin");
-        unzip("test_zip.bin", "photo1_d.jpg");
+        archive("tests/originals/photo1.jpg", "test_zip.bin");
+        unzip("test_zip.bin", "tests/decoded/photo1_d.jpg");
     }
 
     return 0;
